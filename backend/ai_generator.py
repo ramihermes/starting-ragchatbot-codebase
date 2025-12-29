@@ -40,51 +40,73 @@ Provide only the direct answer to what was asked.
             "max_tokens": 800
         }
     
+    def _extract_text_from_response(self, response) -> str:
+        """
+        Safely extract text from Claude API response.
+        Handles cases where response might contain tool_use blocks instead of text.
+
+        Args:
+            response: Claude API response object
+
+        Returns:
+            Extracted text or error message
+        """
+        if not response or not hasattr(response, 'content'):
+            return "No response content available"
+
+        # Iterate through content blocks to find text
+        for block in response.content:
+            if hasattr(block, 'text') and block.text:
+                return block.text
+
+        # No text block found - may be tool_use only or empty response
+        return "Response contained no text content"
+
     def generate_response(self, query: str,
                          conversation_history: Optional[str] = None,
                          tools: Optional[List] = None,
                          tool_manager=None) -> str:
         """
         Generate AI response with optional tool usage and conversation context.
-        
+
         Args:
             query: The user's question or request
             conversation_history: Previous messages for context
             tools: Available tools the AI can use
             tool_manager: Manager to execute tools
-            
+
         Returns:
             Generated response as string
         """
-        
+
         # Build system content efficiently - avoid string ops when possible
         system_content = (
             f"{self.SYSTEM_PROMPT}\n\nPrevious conversation:\n{conversation_history}"
-            if conversation_history 
+            if conversation_history
             else self.SYSTEM_PROMPT
         )
-        
+
         # Prepare API call parameters efficiently
         api_params = {
             **self.base_params,
             "messages": [{"role": "user", "content": query}],
             "system": system_content
         }
-        
+
         # Add tools if available
         if tools:
             api_params["tools"] = tools
             api_params["tool_choice"] = {"type": "auto"}
-        
+
         # Get response from Claude
         response = self.client.messages.create(**api_params)
-        
+
         # Handle tool execution if needed
         if response.stop_reason == "tool_use" and tool_manager:
             return self._handle_tool_execution(response, api_params, tool_manager)
-        
-        # Return direct response
-        return response.content[0].text
+
+        # Return direct response - safely extract text
+        return self._extract_text_from_response(response)
     
     def _handle_tool_execution(self, initial_response, base_params: Dict[str, Any], tool_manager):
         """
@@ -132,4 +154,6 @@ Provide only the direct answer to what was asked.
         
         # Get final response
         final_response = self.client.messages.create(**final_params)
-        return final_response.content[0].text
+
+        # Safely extract text from final response
+        return self._extract_text_from_response(final_response)

@@ -81,7 +81,11 @@ async function sendMessage() {
             })
         });
 
-        if (!response.ok) throw new Error('Query failed');
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const errorMessage = errorData.detail || 'Query failed';
+            throw new Error(errorMessage);
+        }
 
         const data = await response.json();
         
